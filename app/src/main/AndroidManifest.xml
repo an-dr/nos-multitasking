@@ -36,6 +36,30 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
 
+        <activity
+            android:name=".CreateShortcutActivity$Split"
+            android:exported="true"
+            android:icon="@drawable/ic_split"
+            android:label="@string/split_label"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.CREATE_SHORTCUT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".CreateShortcutActivity$Popup"
+            android:exported="true"
+            android:icon="@drawable/ic_popup"
+            android:label="@string/popup_label"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.CREATE_SHORTCUT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".MultitaskService"
             android:exported="true"

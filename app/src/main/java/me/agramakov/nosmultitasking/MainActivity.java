@@ -49,6 +49,10 @@ public class MainActivity extends Activity {
                 pin(MultitaskService.ACTION_SPLIT, "Split screen", R.drawable.ic_split)));
         root.addView(button("Pin Pop-up view shortcut", v ->
                 pin(MultitaskService.ACTION_POPUP, "Pop-up view", R.drawable.ic_popup)));
+        root.addView(button("Add Split screen tile to Quick Settings", v ->
+                addTile(SplitTile.class, "Split screen", R.drawable.ic_split)));
+        root.addView(button("Add Pop-up view tile to Quick Settings", v ->
+                addTile(PopupTile.class, "Pop-up view", R.drawable.ic_popup)));
         root.addView(button("Refresh log", v -> refresh()));
 
         logView = new TextView(this);
@@ -78,6 +82,16 @@ public class MainActivity extends Activity {
         b.setText(text);
         b.setOnClickListener(l);
         return b;
+    }
+
+    private void addTile(Class<?> cls, String label, int iconRes) {
+        android.app.StatusBarManager sbm = getSystemService(android.app.StatusBarManager.class);
+        sbm.requestAddTileService(new android.content.ComponentName(this, cls), label,
+                Icon.createWithResource(this, iconRes), getMainExecutor(), result ->
+                        Toast.makeText(this, result == android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED
+                                || result == android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED
+                                ? "Tile added" : "Not added (code " + result + ")",
+                                Toast.LENGTH_SHORT).show());
     }
 
     private void pin(String action, String label, int iconRes) {
