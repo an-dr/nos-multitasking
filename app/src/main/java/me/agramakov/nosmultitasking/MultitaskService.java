@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Pattern;
 
 /**
  * Accessibility service that performs the two actions.
@@ -33,10 +32,7 @@ public class MultitaskService extends AccessibilityService {
     public static final String ACTION_SPLIT = "split";
     public static final String ACTION_POPUP = "popup";
 
-    private static final Pattern POPUP_TEXT =
-            Pattern.compile("(?i).*(pop-?\\s?up|floating|freeform).*");
-    private static final Pattern SPLIT_TEXT = Pattern.compile("(?i).*split.*");
-    private static final long POPUP_TIMEOUT_MS = 8000;
+    private static final long POPUP_TIMEOUT_MS = 6000;
     private static final long POLL_MS = 250;
 
     private static volatile MultitaskService instance;
@@ -118,74 +114,142 @@ public class MultitaskService extends AccessibilityService {
         }
     }
 
+    private int generation = 0;
+
     private void execute(String action) {
-        log("action=" + action + " lastApp=" + lastAppPackage);
+        // A newer trigger cancels any run still in flight.
+        generation++;
+        final int gen = generation;
+        handler.removeCallbacksAndMessages(null);
+        log("=== action=" + action + " lastApp=" + lastAppPackage + " gen=" + gen);
         // Close the notification shade in case a Quick Settings tile triggered us.
         performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE);
-        handler.postDelayed(() -> {
-            if (ACTION_SPLIT.equals(action)) {
-                boolean ok = performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN);
-                log("toggle split screen -> " + ok);
-                if (!ok) viaRecents(SPLIT_TEXT, "Split screen");
-            } else {
-                viaRecents(POPUP_TEXT, "Pop-up view");
-            }
-        }, 500);
+        final boolean split = ACTION_SPLIT.equals(action);
+        handler.postDelayed(() -> viaRecents(gen, split ? "Split screen" : "Pop-up view"), 350);
     }
 
-    // ---- Recents-menu automation -----------------------------------------
+    // ---- Recents automation ----------------------------------------------
+    // Nothing's Recents shows "Split screen" / "Pop-up view" buttons under the
+    // centred app card. Open Recents, make sure the target app's card is the
+    // centred one (swipe if not), then click the button.
 
-    /** Opens Recents, taps the app pill on the previous app's card, taps the matching menu entry. */
-    private void viaRecents(Pattern entryPattern, String name) {
+    private void viaRecents(int gen, String name) {
         refreshHomePkgs();
-        String label = labelOf(lastAppPackage);
-        log(name + ": via Recents (launchers=" + homePkgs + "), target label=" + label);
+        final String label = labelOf(lastAppPackage);
+        log(name + ": opening Recents, target=" + label);
         if (!performGlobalAction(GLOBAL_ACTION_RECENTS)) {
             toast("Could not open Recents");
             return;
         }
         final long start = System.currentTimeMillis();
-        final long[] lastTap = {0};
-        final int[] taps = {0};
+        final int[] swipes = {0};
+        final long[] lastSwipe = {0};
+        final String[] lastState = {""};
         Runnable poll = new Runnable() {
             @Override
             public void run() {
+                if (gen != generation) return;
                 long now = System.currentTimeMillis();
                 List<AccessibilityNodeInfo> roots = roots();
-
-                // 1) Menu entry visible? Tap it.
-                AccessibilityNodeInfo entry = findFirst(roots, n -> matches(n, entryPattern));
-                if (entry != null) {
-                    log("tapping entry: " + describe(entry));
-                    if (!clickUp(entry)) tapCenter(entry);
-                    return;
+                AccessibilityNodeInfo entry = findEntry(roots, name);
+                AccessibilityNodeInfo centered = centeredCard(roots);
+                AccessibilityNodeInfo target = label == null ? null : cardWithLabel(roots, label);
+                String cLabel = centered == null ? null : String.valueOf(centered.getContentDescription());
+                String state = "entry=" + (entry != null) + " centered=" + cLabel
+                        + " targetVisible=" + (target != null) + " t=" + (now - start) + "ms";
+                if (!state.equals(lastState[0])) {
+                    log("  " + state);
+                    lastState[0] = state;
                 }
 
-                // 2) Tap the app pill at the top of the app's card.
-                if (label != null && taps[0] < 3 && now - lastTap[0] > 2000) {
-                    AccessibilityNodeInfo card = bestCard(roots, label);
-                    if (card != null) {
-                        tapHeader(card);
-                        taps[0]++;
-                        lastTap[0] = now;
-                        handler.postDelayed(() -> {
-                            log("--- tree 1s after header tap ---");
-                            dump(roots());
-                        }, 1000);
+                if (entry != null && now - lastSwipe[0] > 700) {
+                    boolean focused = label == null || target == null || centered == null
+                            || label.equalsIgnoreCase(cLabel);
+                    if (focused || swipes[0] >= 3) {
+                        boolean ok = clickUp(entry);
+                        log(name + ": click " + describe(entry) + " -> " + ok
+                                + " (" + (now - start) + "ms)");
+                        if (!ok) tapCenter(entry);
+                        return;
                     }
+                    // Target card is on screen but not centred: scroll it into the middle.
+                    Rect t = new Rect(), c = new Rect();
+                    target.getBoundsInScreen(t);
+                    centered.getBoundsInScreen(c);
+                    int w = getResources().getDisplayMetrics().widthPixels;
+                    int y = getResources().getDisplayMetrics().heightPixels / 2;
+                    boolean right = t.left < c.left;
+                    log("  swipe " + (right ? "right" : "left") + " to centre " + label);
+                    swipe(right ? w * 0.15f : w * 0.85f, y, right ? w * 0.85f : w * 0.15f, y);
+                    swipes[0]++;
+                    lastSwipe[0] = now;
                 }
 
                 if (now - start > POPUP_TIMEOUT_MS) {
-                    log(name + ": timed out (header taps=" + taps[0] + "). Tree:");
+                    log(name + ": timed out. Tree:");
                     dump(roots);
-                    toast(name + ": menu entry not found (see log in app)");
-                    performGlobalAction(GLOBAL_ACTION_HOME);
+                    toast(name + ": failed, see log in app");
                     return;
                 }
                 handler.postDelayed(this, POLL_MS);
             }
         };
-        handler.postDelayed(poll, 700);
+        handler.postDelayed(poll, 400);
+    }
+
+    /** The bottom-bar button whose label is exactly {@code name}, inside the launcher window. */
+    private AccessibilityNodeInfo findEntry(List<AccessibilityNodeInfo> roots, String name) {
+        return findFirst(roots, n -> {
+            if (ignored(n)) return false;
+            CharSequence d = n.getContentDescription();
+            CharSequence t = n.getText();
+            boolean hit = (d != null && d.toString().equalsIgnoreCase(name))
+                    || (t != null && t.toString().equalsIgnoreCase(name));
+            if (!hit) return false;
+            // Must be clickable itself or inside something clickable, and near the bottom.
+            Rect r = new Rect();
+            n.getBoundsInScreen(r);
+            return r.top > getResources().getDisplayMetrics().heightPixels / 2;
+        });
+    }
+
+    private boolean isCard(AccessibilityNodeInfo n) {
+        if (ignored(n)) return false;
+        CharSequence d = n.getContentDescription();
+        if (d == null || d.length() == 0) return false;
+        Rect r = new Rect();
+        n.getBoundsInScreen(r);
+        return r.height() > 1000 && r.width() > 400;
+    }
+
+    /** The Recents card that contains the horizontal screen centre. */
+    private AccessibilityNodeInfo centeredCard(List<AccessibilityNodeInfo> roots) {
+        int cx = getResources().getDisplayMetrics().widthPixels / 2;
+        return findFirst(roots, n -> {
+            if (!isCard(n)) return false;
+            Rect r = new Rect();
+            n.getBoundsInScreen(r);
+            return r.left <= cx && r.right >= cx;
+        });
+    }
+
+    private AccessibilityNodeInfo cardWithLabel(List<AccessibilityNodeInfo> roots, String label) {
+        int sw = getResources().getDisplayMetrics().widthPixels;
+        return findFirst(roots, n -> {
+            if (!isCard(n)) return false;
+            if (!label.equalsIgnoreCase(String.valueOf(n.getContentDescription()))) return false;
+            Rect r = new Rect();
+            n.getBoundsInScreen(r);
+            return r.right > 0 && r.left < sw;
+        });
+    }
+
+    private void swipe(float x1, float y1, float x2, float y2) {
+        Path p = new Path();
+        p.moveTo(x1, y1);
+        p.lineTo(x2, y2);
+        dispatchGesture(new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(p, 0, 250)).build(), null, null);
     }
 
     private final java.util.Set<String> homePkgs = new java.util.HashSet<>();
@@ -203,66 +267,6 @@ public class MultitaskService extends AccessibilityService {
     private boolean ignored(AccessibilityNodeInfo n) {
         CharSequence p = n.getPackageName();
         return p == null || !homePkgs.contains(p.toString());
-    }
-
-    private boolean matches(AccessibilityNodeInfo n, Pattern pat) {
-        if (ignored(n)) return false;
-        CharSequence t = n.getText();
-        CharSequence d = n.getContentDescription();
-        return (t != null && t.length() <= 40 && pat.matcher(t).matches())
-                || (d != null && d.length() <= 40 && pat.matcher(d).matches());
-    }
-
-    /** The on-screen Recents card that carries the app's label. */
-    private AccessibilityNodeInfo bestCard(List<AccessibilityNodeInfo> roots, String label) {
-        final AccessibilityNodeInfo[] best = {null};
-        final long[] bestArea = {0};
-        int sw = getResources().getDisplayMetrics().widthPixels;
-        int sh = getResources().getDisplayMetrics().heightPixels;
-        Rect r = new Rect();
-        for (AccessibilityNodeInfo root : roots) {
-            walk(root, n -> {
-                if (ignored(n)) return;
-                CharSequence d = n.getContentDescription();
-                CharSequence t = n.getText();
-                boolean hit = (d != null && d.toString().equalsIgnoreCase(label))
-                        || (t != null && t.toString().equalsIgnoreCase(label));
-                if (!hit) return;
-                n.getBoundsInScreen(r);
-                Rect vis = new Rect(r);
-                if (!vis.intersect(0, 0, sw, sh)) return;
-                long area = (long) vis.width() * vis.height();
-                if (area > bestArea[0]) {
-                    bestArea[0] = area;
-                    best[0] = AccessibilityNodeInfo.obtain(n);
-                }
-            });
-        }
-        return best[0];
-    }
-
-    /** Taps the app-name pill: a clickable child near the card top, else a positional tap. */
-    private void tapHeader(AccessibilityNodeInfo card) {
-        Rect c = new Rect();
-        card.getBoundsInScreen(c);
-        final AccessibilityNodeInfo[] child = {null};
-        Rect r = new Rect();
-        walk(card, n -> {
-            if (child[0] != null || n == card || !n.isClickable()) return;
-            n.getBoundsInScreen(r);
-            if (r.top < c.top + c.height() * 0.2 && r.width() < c.width() * 0.9) {
-                child[0] = AccessibilityNodeInfo.obtain(n);
-            }
-        });
-        if (child[0] != null && child[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            log("clicked header child: " + describe(child[0]));
-            return;
-        }
-        // Pill sits ~30% across and ~4.5% down from the card's top-left corner.
-        float x = c.left + c.width() * 0.30f;
-        float y = c.top + c.height() * 0.045f;
-        log("tap header at " + (int) x + "," + (int) y + " card=" + c.toShortString());
-        tap(x, y);
     }
 
     private void tapCenter(AccessibilityNodeInfo n) {
