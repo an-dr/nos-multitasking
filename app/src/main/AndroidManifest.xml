@@ -34,6 +34,18 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <activity
+            android:name=".ShizukuConsoleActivity"
+            android:exported="false" />
+
         <activity
             android:name=".ExperimentsActivity"
             android:exported="false" />
