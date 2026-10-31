@@ -137,8 +137,9 @@ public class MultitaskService extends AccessibilityService {
 
     /** Opens Recents, taps the app pill on the previous app's card, taps the matching menu entry. */
     private void viaRecents(Pattern entryPattern, String name) {
+        refreshHomePkgs();
         String label = labelOf(lastAppPackage);
-        log(name + ": via Recents, target label=" + label);
+        log(name + ": via Recents (launchers=" + homePkgs + "), target label=" + label);
         if (!performGlobalAction(GLOBAL_ACTION_RECENTS)) {
             toast("Could not open Recents");
             return;
@@ -187,18 +188,28 @@ public class MultitaskService extends AccessibilityService {
         handler.postDelayed(poll, 700);
     }
 
+    private final java.util.Set<String> homePkgs = new java.util.HashSet<>();
+
+    private void refreshHomePkgs() {
+        homePkgs.clear();
+        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        for (ResolveInfo ri : getPackageManager().queryIntentActivities(home, 0)) {
+            homePkgs.add(ri.activityInfo.packageName);
+        }
+    }
+
+    /** Only the launcher (which hosts Recents) is of interest; apps behind it are ignored. */
     private boolean ignored(AccessibilityNodeInfo n) {
         CharSequence p = n.getPackageName();
-        return p == null || p.toString().equals(getPackageName())
-                || p.toString().equals("com.android.systemui");
+        return p == null || !homePkgs.contains(p.toString());
     }
 
     private boolean matches(AccessibilityNodeInfo n, Pattern pat) {
         if (ignored(n)) return false;
         CharSequence t = n.getText();
         CharSequence d = n.getContentDescription();
-        return (t != null && pat.matcher(t).matches())
-                || (d != null && pat.matcher(d).matches());
+        return (t != null && t.length() <= 40 && pat.matcher(t).matches())
+                || (d != null && d.length() <= 40 && pat.matcher(d).matches());
     }
 
     /** The on-screen Recents card that carries the app's label. */
