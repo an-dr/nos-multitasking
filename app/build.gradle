@@ -1,0 +1,29 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'me.agramakov.nosmultitasking'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'me.agramakov.nosmultitasking'
+        minSdk 34
+        targetSdk 36
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        // Debug-signed so the APK installs directly; no keystore needed.
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

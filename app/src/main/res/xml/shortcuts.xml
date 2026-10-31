@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="split"
+        android:enabled="true"
+        android:icon="@drawable/ic_split"
+        android:shortcutShortLabel="@string/split_label"
+        android:shortcutLongLabel="@string/split_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="me.agramakov.nosmultitasking.ActionActivity"
+            android:targetPackage="me.agramakov.nosmultitasking">
+            <extra android:name="action" android:value="split" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="popup"
+        android:enabled="true"
+        android:icon="@drawable/ic_popup"
+        android:shortcutShortLabel="@string/popup_label"
+        android:shortcutLongLabel="@string/popup_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="me.agramakov.nosmultitasking.ActionActivity"
+            android:targetPackage="me.agramakov.nosmultitasking">
+            <extra android:name="action" android:value="popup" />
+        </intent>
+    </shortcut>
+</shortcuts>

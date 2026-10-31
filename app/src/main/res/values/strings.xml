@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">NOS Multitasking</string>
+    <string name="split_label">Split screen</string>
+    <string name="popup_label">Pop-up view</string>
+    <string name="split_long">Split screen</string>
+    <string name="popup_long">Pop-up view</string>
+    <string name="accessibility_description">Triggers split screen and pop-up view for the current app when you use this app\'s shortcuts or Quick Settings tiles. It does not read or store any screen content.</string>
+</resources>
