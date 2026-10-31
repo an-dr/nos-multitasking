@@ -10,15 +10,24 @@ android {
         applicationId 'me.agramakov.nosmultitasking'
         minSdk 34
         targetSdk 36
-        versionCode 1
+        versionCode (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
         versionName '1.0'
     }
 
+    signingConfigs {
+        fixed {
+            storeFile file('release.keystore')
+            storePassword 'nosmulti'
+            keyAlias 'nos'
+            keyPassword 'nosmulti'
+        }
+    }
+
     buildTypes {
-        // Debug-signed so the APK installs directly; no keystore needed.
+        // Signed with a fixed key committed to the repo so updates install over each other.
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.fixed
         }
     }
 
