@@ -53,6 +53,8 @@ public class MainActivity extends Activity {
                 addTile(SplitTile.class, "Split screen", R.drawable.ic_split)));
         root.addView(button("Add Pop-up view tile to Quick Settings", v ->
                 addTile(PopupTile.class, "Pop-up view", R.drawable.ic_popup)));
+        root.addView(button("Experiments (direct launch probes)", v ->
+                startActivity(new Intent(this, ExperimentsActivity.class))));
         root.addView(button("Refresh log", v -> refresh()));
         root.addView(button("Copy log", v -> {
             android.content.ClipboardManager cm = getSystemService(android.content.ClipboardManager.class);

@@ -45,6 +45,17 @@ public class MultitaskService extends AccessibilityService {
         return instance != null;
     }
 
+    /** Describes the global actions this device lets the service perform. */
+    public static String systemActions() {
+        MultitaskService s = instance;
+        if (s == null) return "system actions: service not running";
+        StringBuilder sb = new StringBuilder("system actions:");
+        for (android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction a : s.getSystemActions()) {
+            sb.append(" ").append(a.getId()).append("=").append(a.getLabel());
+        }
+        return sb.toString();
+    }
+
     public static synchronized String getLog() {
         return log.length() == 0 ? "(empty)" : log.toString();
     }
