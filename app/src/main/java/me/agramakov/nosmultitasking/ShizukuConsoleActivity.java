@@ -19,21 +19,31 @@ import rikka.shizuku.Shizuku;
 
 /** Runs shell commands through Shizuku (after a delay, so you can switch to another app first). */
 public class ShizukuConsoleActivity extends Activity {
+    private static final String TOP_TASK =
+            "T=$(dumpsys activity activities | grep -m1 topResumedActivity "
+                    + "| sed -E 's/.* t([0-9]+)[}].*/\\1/'); echo task=$T; ";
+    private static final String WMSHELL = "dumpsys activity service SystemUIService WMShell ";
+
     private static final String[][] PRESETS = {
             {"Top activity",
-                    "dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -5"},
-            {"Task list + modes",
-                    "dumpsys activity activities | grep -E 'Task\\{' | head -40"},
-            {"Logcat: popup/split/freeform",
-                    "logcat -d -t 800 | grep -iE 'popup|pop-up|freeform|split|bubble|StageCoordinator' | tail -80"},
-            {"Key combo Meta+Ctrl+Left (split)",
+                    "dumpsys activity activities | grep -E 'topResumedActivity' | head -3"},
+            {"Non-fullscreen tasks (pop-up/split/freeform)",
+                    "dumpsys activity activities | grep -E 'Task\\{' | grep -v 'mode=fullscreen'"},
+            {"Logcat (all buffers): popup/split/bubble",
+                    "logcat -d -b all -t 4000 | grep -iE 'popup|pop-up|freeform|bubble|splitscreen|StageCoordinator' | tail -60"},
+            {"WMShell help (list shell commands)", WMSHELL + "help 2>&1 | head -80"},
+            {"WMShell: split/stage/bubble state",
+                    WMSHELL + "2>&1 | grep -iE 'split|stage|bubble|freeform|desktop' | head -60"},
+            {"Split: move current task to side stage (left/top)",
+                    TOP_TASK + WMSHELL + "splitscreen moveToSideStage $T 0 2>&1"},
+            {"Split: move current task to side stage (right/bottom)",
+                    TOP_TASK + WMSHELL + "splitscreen moveToSideStage $T 1 2>&1"},
+            {"am help: windowing/split/bubble options",
+                    "am help 2>&1 | grep -iE 'windowing|split|bubble|freeform|launch-' | head -30"},
+            {"Resolve Firefox launcher activity",
+                    "cmd package resolve-activity --brief -c android.intent.category.LAUNCHER org.mozilla.firefox"},
+            {"Key combo Meta+Ctrl+Left",
                     "input keycombination KEYCODE_META_LEFT KEYCODE_CTRL_LEFT KEYCODE_DPAD_LEFT"},
-            {"Key combo Meta+Ctrl+Right (split)",
-                    "input keycombination KEYCODE_META_LEFT KEYCODE_CTRL_LEFT KEYCODE_DPAD_RIGHT"},
-            {"Launch Firefox freeform",
-                    "am start --windowingMode 5 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p org.mozilla.firefox"},
-            {"Launch Firefox split-secondary",
-                    "am start --windowingMode 4 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p org.mozilla.firefox"},
     };
 
     private final Handler ui = new Handler(Looper.getMainLooper());
