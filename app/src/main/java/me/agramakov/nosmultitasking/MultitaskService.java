@@ -78,6 +78,7 @@ public class MultitaskService extends AccessibilityService {
     protected void onServiceConnected() {
         instance = this;
         log("service connected");
+        ShizukuShell.init();
     }
 
     @Override
@@ -136,7 +137,20 @@ public class MultitaskService extends AccessibilityService {
         // Close the notification shade in case a Quick Settings tile triggered us.
         performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE);
         final boolean split = ACTION_SPLIT.equals(action);
-        handler.postDelayed(() -> viaRecents(gen, split ? "Split screen" : "Pop-up view"), 350);
+        if (split && !ShizukuShell.ready()) ShizukuShell.tryBind();
+        handler.postDelayed(() -> {
+            if (gen != generation) return;
+            if (split && ShizukuShell.ready()) {
+                // Android's "enter split screen" shortcut (Meta+Ctrl+Left), sent from the shell.
+                long t0 = System.currentTimeMillis();
+                ShizukuShell.exec("input keycombination KEYCODE_META_LEFT KEYCODE_CTRL_LEFT KEYCODE_DPAD_LEFT",
+                        out -> log("split via shizuku: " + out.trim().replace('\n', ' ')
+                                + " (" + (System.currentTimeMillis() - t0) + "ms)"));
+            } else {
+                if (split) log("shizuku not ready, falling back to Recents");
+                viaRecents(gen, split ? "Split screen" : "Pop-up view");
+            }
+        }, 450);
     }
 
     // ---- Recents automation ----------------------------------------------
