@@ -54,6 +54,11 @@ public class MainActivity extends Activity {
         root.addView(button("Add Pop-up view tile to Quick Settings", v ->
                 addTile(PopupTile.class, "Pop-up view", R.drawable.ic_popup)));
         root.addView(button("Refresh log", v -> refresh()));
+        root.addView(button("Copy log", v -> {
+            android.content.ClipboardManager cm = getSystemService(android.content.ClipboardManager.class);
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("log", MultitaskService.getLog()));
+            Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
+        }));
 
         logView = new TextView(this);
         logView.setTextSize(11);

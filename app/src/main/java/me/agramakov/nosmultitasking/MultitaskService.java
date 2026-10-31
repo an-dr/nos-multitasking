@@ -1,6 +1,8 @@
 package me.agramakov.nosmultitasking;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
+import android.graphics.Path;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -33,7 +35,8 @@ public class MultitaskService extends AccessibilityService {
 
     private static final Pattern POPUP_TEXT =
             Pattern.compile("(?i).*(pop-?\\s?up|floating|freeform).*");
-    private static final long POPUP_TIMEOUT_MS = 5000;
+    private static final Pattern SPLIT_TEXT = Pattern.compile("(?i).*split.*");
+    private static final long POPUP_TIMEOUT_MS = 8000;
     private static final long POLL_MS = 250;
 
     private static volatile MultitaskService instance;
@@ -53,7 +56,7 @@ public class MultitaskService extends AccessibilityService {
     static synchronized void log(String line) {
         String ts = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
         log.append(ts).append("  ").append(line).append('\n');
-        if (log.length() > 6000) log.delete(0, log.length() - 5000);
+        if (log.length() > 40000) log.delete(0, log.length() - 30000);
     }
 
     /** Runs an action on the app that was in the foreground before the trigger. */
@@ -123,25 +126,26 @@ public class MultitaskService extends AccessibilityService {
             if (ACTION_SPLIT.equals(action)) {
                 boolean ok = performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN);
                 log("toggle split screen -> " + ok);
-                if (!ok) toast("Split screen not available here");
+                if (!ok) viaRecents(SPLIT_TEXT, "Split screen");
             } else {
-                startPopup();
+                viaRecents(POPUP_TEXT, "Pop-up view");
             }
-        }, 400);
+        }, 500);
     }
 
-    // ---- pop-up view ------------------------------------------------------
+    // ---- Recents-menu automation -----------------------------------------
 
-    private void startPopup() {
+    /** Opens Recents, taps the app pill on the previous app's card, taps the matching menu entry. */
+    private void viaRecents(Pattern entryPattern, String name) {
         String label = labelOf(lastAppPackage);
-        log("popup: target label=" + label);
+        log(name + ": via Recents, target label=" + label);
         if (!performGlobalAction(GLOBAL_ACTION_RECENTS)) {
             toast("Could not open Recents");
             return;
         }
         final long start = System.currentTimeMillis();
-        final boolean[] iconClicked = {false};
-        final long[] lastIconClick = {0};
+        final long[] lastTap = {0};
+        final int[] taps = {0};
         Runnable poll = new Runnable() {
             @Override
             public void run() {
@@ -149,71 +153,127 @@ public class MultitaskService extends AccessibilityService {
                 List<AccessibilityNodeInfo> roots = roots();
 
                 // 1) Menu entry visible? Tap it.
-                AccessibilityNodeInfo entry = findFirst(roots, n -> matchesPopup(n));
-                if (entry != null && clickUp(entry)) {
-                    log("clicked pop-up entry: " + describe(entry));
+                AccessibilityNodeInfo entry = findFirst(roots, n -> matches(n, entryPattern));
+                if (entry != null) {
+                    log("tapping entry: " + describe(entry));
+                    if (!clickUp(entry)) tapCenter(entry);
                     return;
                 }
 
-                // 2) Tap the app icon (smallest node carrying the app label).
-                if (label != null && now - lastIconClick[0] > 1500) {
-                    AccessibilityNodeInfo icon = smallestWithLabel(roots, label);
-                    if (icon != null && clickUp(icon)) {
-                        iconClicked[0] = true;
-                        lastIconClick[0] = now;
-                        log("clicked icon: " + describe(icon));
+                // 2) Tap the app pill at the top of the app's card.
+                if (label != null && taps[0] < 3 && now - lastTap[0] > 2000) {
+                    AccessibilityNodeInfo card = bestCard(roots, label);
+                    if (card != null) {
+                        tapHeader(card);
+                        taps[0]++;
+                        lastTap[0] = now;
+                        handler.postDelayed(() -> {
+                            log("--- tree 1s after header tap ---");
+                            dump(roots());
+                        }, 1000);
                     }
                 }
 
                 if (now - start > POPUP_TIMEOUT_MS) {
-                    log("popup: timed out (iconClicked=" + iconClicked[0] + "). Visible nodes:");
+                    log(name + ": timed out (header taps=" + taps[0] + "). Tree:");
                     dump(roots);
-                    toast("Pop-up view: menu entry not found (see log in app)");
+                    toast(name + ": menu entry not found (see log in app)");
                     performGlobalAction(GLOBAL_ACTION_HOME);
                     return;
                 }
                 handler.postDelayed(this, POLL_MS);
             }
         };
-        handler.postDelayed(poll, 600);
+        handler.postDelayed(poll, 700);
     }
 
-    private List<AccessibilityNodeInfo> roots() {
-        List<AccessibilityNodeInfo> out = new ArrayList<>();
-        for (AccessibilityWindowInfo w : getWindows()) {
-            AccessibilityNodeInfo r = w.getRoot();
-            if (r != null) out.add(r);
-        }
-        return out;
+    private boolean ignored(AccessibilityNodeInfo n) {
+        CharSequence p = n.getPackageName();
+        return p == null || p.toString().equals(getPackageName())
+                || p.toString().equals("com.android.systemui");
     }
 
-    private boolean matchesPopup(AccessibilityNodeInfo n) {
+    private boolean matches(AccessibilityNodeInfo n, Pattern pat) {
+        if (ignored(n)) return false;
         CharSequence t = n.getText();
         CharSequence d = n.getContentDescription();
-        return (t != null && POPUP_TEXT.matcher(t).matches())
-                || (d != null && POPUP_TEXT.matcher(d).matches());
+        return (t != null && pat.matcher(t).matches())
+                || (d != null && pat.matcher(d).matches());
     }
 
-    private AccessibilityNodeInfo smallestWithLabel(List<AccessibilityNodeInfo> roots, String label) {
+    /** The on-screen Recents card that carries the app's label. */
+    private AccessibilityNodeInfo bestCard(List<AccessibilityNodeInfo> roots, String label) {
         final AccessibilityNodeInfo[] best = {null};
-        final int[] bestArea = {Integer.MAX_VALUE};
+        final long[] bestArea = {0};
+        int sw = getResources().getDisplayMetrics().widthPixels;
+        int sh = getResources().getDisplayMetrics().heightPixels;
         Rect r = new Rect();
         for (AccessibilityNodeInfo root : roots) {
             walk(root, n -> {
+                if (ignored(n)) return;
                 CharSequence d = n.getContentDescription();
                 CharSequence t = n.getText();
                 boolean hit = (d != null && d.toString().equalsIgnoreCase(label))
                         || (t != null && t.toString().equalsIgnoreCase(label));
                 if (!hit) return;
                 n.getBoundsInScreen(r);
-                int area = Math.max(1, r.width()) * Math.max(1, r.height());
-                if (area < bestArea[0]) {
+                Rect vis = new Rect(r);
+                if (!vis.intersect(0, 0, sw, sh)) return;
+                long area = (long) vis.width() * vis.height();
+                if (area > bestArea[0]) {
                     bestArea[0] = area;
                     best[0] = AccessibilityNodeInfo.obtain(n);
                 }
             });
         }
         return best[0];
+    }
+
+    /** Taps the app-name pill: a clickable child near the card top, else a positional tap. */
+    private void tapHeader(AccessibilityNodeInfo card) {
+        Rect c = new Rect();
+        card.getBoundsInScreen(c);
+        final AccessibilityNodeInfo[] child = {null};
+        Rect r = new Rect();
+        walk(card, n -> {
+            if (child[0] != null || n == card || !n.isClickable()) return;
+            n.getBoundsInScreen(r);
+            if (r.top < c.top + c.height() * 0.2 && r.width() < c.width() * 0.9) {
+                child[0] = AccessibilityNodeInfo.obtain(n);
+            }
+        });
+        if (child[0] != null && child[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            log("clicked header child: " + describe(child[0]));
+            return;
+        }
+        // Pill sits ~30% across and ~4.5% down from the card's top-left corner.
+        float x = c.left + c.width() * 0.30f;
+        float y = c.top + c.height() * 0.045f;
+        log("tap header at " + (int) x + "," + (int) y + " card=" + c.toShortString());
+        tap(x, y);
+    }
+
+    private void tapCenter(AccessibilityNodeInfo n) {
+        Rect r = new Rect();
+        n.getBoundsInScreen(r);
+        log("tap center " + r.centerX() + "," + r.centerY());
+        tap(r.centerX(), r.centerY());
+    }
+
+    private void tap(float x, float y) {
+        Path p = new Path();
+        p.moveTo(x, y);
+        dispatchGesture(new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(p, 0, 60)).build(), null, null);
+    }
+
+    private List<AccessibilityNodeInfo> roots() {
+        List<AccessibilityNodeInfo> out = new ArrayList<>();
+        for (AccessibilityWindowInfo w : getWindows()) {
+            AccessibilityNodeInfo r = w.getRoot();
+            if (r != null && !ignored(r)) out.add(r);
+        }
+        return out;
     }
 
     private AccessibilityNodeInfo findFirst(List<AccessibilityNodeInfo> roots, Pred p) {
@@ -255,20 +315,20 @@ public class MultitaskService extends AccessibilityService {
     private String describe(AccessibilityNodeInfo n) {
         Rect r = new Rect();
         n.getBoundsInScreen(r);
-        return n.getPackageName() + "/" + n.getClassName()
+        return n.getClassName() + " id=" + n.getViewIdResourceName()
                 + " text=" + n.getText() + " desc=" + n.getContentDescription()
-                + " clickable=" + n.isClickable() + " " + r.toShortString();
+                + " click=" + n.isClickable() + " " + r.toShortString();
     }
 
+    /** Logs every node (not just labelled ones) of the non-own, non-systemui windows. */
     private void dump(List<AccessibilityNodeInfo> roots) {
         int[] count = {0};
         for (AccessibilityNodeInfo root : roots) {
+            log("window pkg=" + root.getPackageName());
             walk(root, n -> {
-                if (count[0] >= 40) return;
-                if (n.getText() != null || n.getContentDescription() != null) {
-                    log("  " + describe(n));
-                    count[0]++;
-                }
+                if (count[0] >= 120) return;
+                log("  " + describe(n));
+                count[0]++;
             });
         }
     }
