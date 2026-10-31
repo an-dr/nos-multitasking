@@ -192,6 +192,7 @@ public class MultitaskService extends AccessibilityService {
 
     private void refreshHomePkgs() {
         homePkgs.clear();
+        homePkgs.add("com.nothing.launcher");
         Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
         for (ResolveInfo ri : getPackageManager().queryIntentActivities(home, 0)) {
             homePkgs.add(ri.activityInfo.packageName);
