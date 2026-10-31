@@ -157,11 +157,12 @@ public class ShizukuConsoleActivity extends Activity {
     }
 
     private void run(String command) {
-        int secs = 0;
+        int parsed = 0;
         try {
-            secs = Integer.parseInt(delay.getText().toString().trim());
+            parsed = Integer.parseInt(delay.getText().toString().trim());
         } catch (NumberFormatException ignored) {
         }
+        final int secs = parsed;
         if (shell == null) {
             MultitaskService.log("shell not connected; tap the grant/connect button first");
             refresh();
