@@ -61,9 +61,9 @@ public class ShizukuConsoleActivity extends Activity {
         }
     };
 
-    private final Shizuku.OnBinderReceivedListener binderListener = this::refresh;
+    private final Shizuku.OnBinderReceivedListener binderListener = this::connect;
     private final Shizuku.OnRequestPermissionResultListener permListener =
-            (code, result) -> refresh();
+            (code, result) -> connect();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,9 +71,10 @@ public class ShizukuConsoleActivity extends Activity {
         int pad = (int) (16 * getResources().getDisplayMetrics().density);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, pad * 2, pad, pad);
+        root.setPadding(pad, pad, pad, pad * 3);
 
         status = new TextView(this);
+        status.setTextSize(16);
         root.addView(status);
         root.addView(button("Grant Shizuku permission / connect", v -> connect()));
 
@@ -87,14 +88,9 @@ public class ShizukuConsoleActivity extends Activity {
         root.addView(delay);
         root.addView(button("Run command after delay", v -> run(cmd.getText().toString())));
 
-        LinearLayout presets = new LinearLayout(this);
-        presets.setOrientation(LinearLayout.VERTICAL);
         for (String[] p : PRESETS) {
-            presets.addView(button(p[0], v -> cmd.setText(p[1])));
+            root.addView(button(p[0], v -> cmd.setText(p[1])));
         }
-        ScrollView ps = new ScrollView(this);
-        ps.addView(presets);
-        root.addView(ps, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         root.addView(button("Copy log", v -> {
             android.content.ClipboardManager cm = getSystemService(android.content.ClipboardManager.class);
@@ -104,10 +100,12 @@ public class ShizukuConsoleActivity extends Activity {
         out.setTextSize(11);
         out.setTypeface(android.graphics.Typeface.MONOSPACE);
         out.setTextIsSelectable(true);
-        ScrollView os = new ScrollView(this);
-        os.addView(out);
-        root.addView(os, new LinearLayout.LayoutParams(-1, 0, 1.5f));
-        setContentView(root);
+        root.addView(out);
+
+        ScrollView sv = new ScrollView(this);
+        sv.setFitsSystemWindows(true);
+        sv.addView(root);
+        setContentView(sv);
 
         Shizuku.addBinderReceivedListenerSticky(binderListener);
         Shizuku.addRequestPermissionResultListener(permListener);
@@ -116,7 +114,7 @@ public class ShizukuConsoleActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        refresh();
+        connect();
     }
 
     @Override
